@@ -9,7 +9,7 @@ import SearchResults from '../Components/SearchResult';
 const Router = () => {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route path="/JoyManga" element={<Home />} />
       <Route path="/manga" element={<MangaList />} />
       <Route path="/manga/:id" element={<MangaDetail />} />
       <Route path="/search" element={<SearchResults />} />

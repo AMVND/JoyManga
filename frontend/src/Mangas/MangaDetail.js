@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import { LanguageContext } from '../Components/LanguageContext';
+import { t } from 'i18next';
 
 const MangaDetail = () => {
   const { id } = useParams();
@@ -69,6 +70,7 @@ const MangaDetail = () => {
     <div className="container my-4">
       <h1>{manga?.attributes.title.en || 'No Title'}</h1>
       <p>{manga?.attributes.description.en}</p>
+      <div>{t('mangadetail.author')}: {manga.attributes.author || 'Unknow'}</div>
       <h2>Chapters (Language: {language.toUpperCase()})</h2>
       {/* Filter dropdown to choose chapter order */}
       <div className="mb-3">

@@ -27,7 +27,7 @@ const NavigationBar = () => {
   return (
     <nav className="navbar navbar-expand-lg navbar-light bg-light fixed-top shadow-sm">
       <div className="container">
-        <Link className="navbar-brand" to="/">
+        <Link className="navbar-brand" to="/JoyManga">
           <img
             src="/logo.png"
             alt="Logo"
@@ -85,7 +85,7 @@ const NavigationBar = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             <button className="btn btn-outline-success" type="submit">
-              Search
+            {t('navbar.searchbutton')}
             </button>
           </form>
           <ul className="navbar-nav">

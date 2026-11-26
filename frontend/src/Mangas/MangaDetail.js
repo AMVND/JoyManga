@@ -1,151 +1,180 @@
-import React, { useEffect, useState, useContext } from 'react';
-import axios from 'axios';
-import { useParams } from 'react-router-dom';
-import { LanguageContext } from '../Components/LanguageContext';
-import { t } from 'i18next';
+import React, { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Badge } from 'react-bootstrap';
+import { useTranslation } from 'react-i18next';
+import { fetchChapters, fetchManga } from '../api/mangadex';
+import useAsync from '../hooks/useAsync';
+import Pager from '../components/Pager';
+import { Empty, ErrorBox, Loading } from '../components/Status';
+import {
+  chapterLabel,
+  formatDate,
+  getCoverUrl,
+  getDescription,
+  getPeople,
+  getTags,
+  getTitle,
+  pickReadingLanguage,
+} from '../utils/manga';
 
-const MangaDetail = () => {
+const PER_PAGE = 20;
+
+export default function MangaDetail() {
   const { id } = useParams();
-  const { language } = useContext(LanguageContext); // current language from context
+  const { t, i18n } = useTranslation();
+  const ui = i18n.language;
 
-  const [manga, setManga] = useState(null);
-  const [chapters, setChapters] = useState([]);
-  const [chapterPage, setChapterPage] = useState(0);
-  const chapterLimit = 10; // chapters per page
-  const [totalChapters, setTotalChapters] = useState(0);
-  const [order, setOrder] = useState('asc'); // 'asc' for oldest->newest, 'desc' for newest->oldest
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [readLang, setReadLang] = useState(null);
+  const [order, setOrder] = useState('desc');
+  const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
-  // Fetch manga details for display purposes.
+  const manga = useAsync((signal) => fetchManga(id, signal), [id]);
+
+  // Chọn ngôn ngữ chương khi đã biết manga có những ngôn ngữ nào.
   useEffect(() => {
-    const fetchMangaDetail = async () => {
-      try {
-        const response = await axios.get(`https://api.mangadex.org/manga/${id}`, {
-          params: { "includes[]": "cover_art" },
-        });
-        setManga(response.data.data);
-      } catch (err) {
-        setError(err);
-      }
-    };
-    fetchMangaDetail();
-  }, [id]);
+    if (manga.data) {
+      setReadLang(
+        pickReadingLanguage(manga.data.attributes.availableTranslatedLanguages || [], ui)
+      );
+    }
+  }, [manga.data, ui]);
 
-  // Fetch chapters using selected language, pagination and order.
-  useEffect(() => {
-    const fetchChapters = async () => {
-      setLoading(true);
-      try {
-        const offset = chapterPage * chapterLimit;
-        const response = await axios.get(`https://api.mangadex.org/manga/${id}/feed`, {
-          params: {
-            "translatedLanguage[]": [language],
-            limit: chapterLimit,
-            offset,
-            "order[updatedAt]": order,
-            "includes[]": ["user"], // include uploader info
-          },
-        });
-        setChapters(response.data.data);
-        if (response.data.total) {
-          setTotalChapters(response.data.total);
-        }
-        setError(null);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchChapters();
-  }, [id, language, chapterPage, order]);
+  useEffect(() => setPage(0), [readLang, order, id]);
 
-  if (loading) return <p>Loading chapters...</p>;
-  if (error) return <p>Error: {error.message}</p>;
+  const chapters = useAsync(
+    (signal) =>
+      readLang
+        ? fetchChapters({ mangaId: id, lang: readLang, offset: page * PER_PAGE, limit: PER_PAGE, order }, signal)
+        : Promise.resolve(null),
+    [id, readLang, order, page]
+  );
 
-  const totalPages = totalChapters ? Math.ceil(totalChapters / chapterLimit) : 1;
+  if (manga.error) return <ErrorBox onRetry={manga.reload} />;
+  if (!manga.data) return <Loading />;
+
+  const m = manga.data;
+  const cover = getCoverUrl(m, 512);
+  const title = getTitle(m, ui);
+  const description = getDescription(m, ui);
+  const authors = getPeople(m, 'author');
+  const artists = getPeople(m, 'artist').filter((a) => !authors.includes(a));
+  const languages = m.attributes.availableTranslatedLanguages || [];
+  const total = chapters.data?.total || 0;
 
   return (
-    <div className="container my-4">
-      <h1>{manga?.attributes.title.en || 'No Title'}</h1>
-      <p>{manga?.attributes.description.en}</p>
-      <div>{t('mangadetail.author')}: {manga.attributes.author || 'Unknow'}</div>
-      <h2>Chapters (Language: {language.toUpperCase()})</h2>
-      {/* Filter dropdown to choose chapter order */}
-      <div className="mb-3">
-        <label htmlFor="orderSelect" className="form-label">
-          Order by update:
-        </label>
-        <select
-          id="orderSelect"
-          className="form-select"
-          value={order}
-          onChange={(e) => {
-            setChapterPage(0); // reset page to 0 on order change
-            setOrder(e.target.value);
-          }}
-        >
-          <option value="asc">Oldest to Newest</option>
-          <option value="desc">Newest to Oldest</option>
-        </select>
-      </div>
-      {chapters.length > 0 ? (
-        <ul className="list-group">
-          {chapters.map((chapter) => {
-            // Retrieve uploader from relationships (if available)
-            const uploaderRel = chapter.relationships?.find(
-              (rel) => rel.type === 'user' && rel.attributes?.username
-            );
-            const uploaderName = uploaderRel ? uploaderRel.attributes.username : 'Unknown';
-            const updatedAt = chapter.attributes.updatedAt
-              ? new Date(chapter.attributes.updatedAt).toLocaleString()
-              : 'N/A';
+    <>
+      <section className="detail">
+        <div className="detail__cover">{cover && <img src={cover} alt={title} />}</div>
+        <div className="detail__info">
+          <h1>{title}</h1>
+          <dl className="detail__meta">
+            {authors.length > 0 && (
+              <>
+                <dt>{t('detail.author')}</dt>
+                <dd>{authors.join(', ')}</dd>
+              </>
+            )}
+            {artists.length > 0 && (
+              <>
+                <dt>{t('detail.artist')}</dt>
+                <dd>{artists.join(', ')}</dd>
+              </>
+            )}
+            {m.attributes.status && (
+              <>
+                <dt>{t('detail.status')}</dt>
+                <dd>{t(`status.${m.attributes.status}`, m.attributes.status)}</dd>
+              </>
+            )}
+            {m.attributes.year && (
+              <>
+                <dt>{t('detail.year')}</dt>
+                <dd>{m.attributes.year}</dd>
+              </>
+            )}
+          </dl>
+          <div className="detail__tags">
+            {getTags(m, 'en').map((tag) => (
+              <Badge key={tag.id} bg="secondary" className="tag">
+                {tag.name}
+              </Badge>
+            ))}
+          </div>
+          <p className={`detail__desc ${expanded ? 'is-open' : ''}`}>
+            {description || t('detail.noDescription')}
+          </p>
+          {description.length > 220 && (
+            <button className="btn btn-link btn-sm p-0" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? t('detail.less') : t('detail.more')}
+            </button>
+          )}
+        </div>
+      </section>
 
-            return (
-              <li key={chapter.id} className="list-group-item">
-                <div>
-                  <strong>
-                    {chapter.attributes.chapter
-                      ? `Chapter ${chapter.attributes.chapter}`
-                      : 'Oneshot'}
-                  </strong>
-                </div>
-                <div>{chapter.attributes.title || 'No title'}</div>
-                <div>
-                  <small>
-                    Updated: {updatedAt} by {uploaderName}
-                  </small>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p>No chapters found in the selected language.</p>
-      )}
-      {/* Pagination Controls */}
-      <div className="d-flex justify-content-between align-items-center my-3">
-        <button
-          className="btn btn-secondary"
-          onClick={() => setChapterPage((prev) => Math.max(prev - 1, 0))}
-          disabled={chapterPage === 0}
-        >
-          Previous
-        </button>
-        <span>
-          Page {chapterPage + 1} of {totalPages}
-        </span>
-        <button
-          className="btn btn-secondary"
-          onClick={() => setChapterPage((prev) => prev + 1)}
-          disabled={chapterPage + 1 >= totalPages}
-        >
-          Next
-        </button>
-      </div>
-    </div>
+      <section className="mt-4">
+        <div className="section-head">
+          <h2>{t('detail.chapters')}</h2>
+          <div className="filters">
+            {languages.length > 1 && (
+              <select
+                className="form-select form-select-sm"
+                value={readLang || ''}
+                onChange={(e) => setReadLang(e.target.value)}
+                aria-label={t('detail.readingLang')}
+              >
+                {languages.map((l) => (
+                  <option key={l} value={l}>
+                    {l.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              className="form-select form-select-sm"
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+              aria-label={t('detail.sort')}
+            >
+              <option value="desc">{t('detail.newest')}</option>
+              <option value="asc">{t('detail.oldest')}</option>
+            </select>
+          </div>
+        </div>
+
+        {chapters.error ? (
+          <ErrorBox onRetry={chapters.reload} />
+        ) : chapters.loading && !chapters.data ? (
+          <Loading />
+        ) : chapters.data?.data.length ? (
+          <div className={chapters.loading ? 'is-refreshing' : ''}>
+            <ul className="chapter-list">
+              {chapters.data.data.map((c) => {
+                const group = c.relationships?.find((r) => r.type === 'scanlation_group')?.attributes
+                  ?.name;
+                return (
+                  <li key={c.id}>
+                    <Link to={`/chapter/${c.id}`}>
+                      <span className="chapter-list__title">{chapterLabel(c, t)}</span>
+                      <span className="chapter-list__meta">
+                        {group || t('chapter.unknownGroup')} · {formatDate(c.attributes.publishAt, ui)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            <Pager
+              page={page}
+              totalPages={Math.ceil(total / PER_PAGE)}
+              onChange={setPage}
+              disabled={chapters.loading}
+            />
+          </div>
+        ) : (
+          <Empty>{t('detail.noChapters')}</Empty>
+        )}
+      </section>
+    </>
   );
-};
-
-export default MangaDetail;
+}
